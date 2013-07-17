@@ -1,4 +1,5 @@
-program automatic test(fifo_if.TB test_if);
+program automatic test(fifo_if.TB test_if,
+                       cpu_if.Cfg cfg_if);
 
 `include "environment.sv"
 Environment env;
