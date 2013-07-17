@@ -2,22 +2,24 @@
 
 module top;
 
-parameter CLK_CYCLE = 100;
+logic rst, clk;
+//System Reset and Clock
 
-bit SystemClock;
+initial begin
+  rst = 1; clk = 0;
+  #5 rst = 0;
+  #5 clk = 1;
+  #5 rst = 1; clk = 0;
+  forever
+    #5 clk = ~clk;
+end
 
-fifo_if my_if(SystemClock);    //instantiating interface and passing clock to it
 
-fifo_test my_test(my_if);     //fifo_test if program block
+fifo_if my_if(clk,rst);       //instantiating interface and passing clock to it
+
+fifo_test my_test(my_if);
 
 sync_fifo DUT(my_if);         //dut with be SV interface compatible
 
-initial begin
-  SystemClock = 0;
-  forever begin
-    #(CLK_CYCLE/2)
-    SystemClock = ~SystemClock;
-  end
-end
 
 enmodule
