@@ -10,9 +10,11 @@ modport Peripheral
         (input CS, Rd_Wr, Addr, Datain,
          output DataOut);
 
-modport Cfg
+modport CFG
         (output CS, Rd_Wr, Addr, DataIn,
          input  DataOut);
          
          
 endinterface
+
+typedef virtual cpu_if.CFG vCPU_T;
