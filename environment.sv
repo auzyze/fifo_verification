@@ -107,7 +107,7 @@ class fifo_op;
   rand bit [1:0]  op_type;
   rand bit [15:0] op_len;
   
-  rand bit [31:0] data [];
+  rand bit [31:0] wr_data [];
     
   bit [31:0] rd_data;
   bit full;
@@ -197,6 +197,7 @@ task Driver::run();
     gen2drv.peek(gen_op);      //"peek" task gets a copy of data in mailbox but doesn't remove it
     send(gen_op);
     gen2drv.get(gen_op);       //remove the data with "get" task after operation has been sent
+    drv2scb.put(gen_op);       // ????
     ->drv2gen;
   end
 endtask : run
@@ -205,22 +206,26 @@ endtask : run
 task Driver::send(input fifo_op gen_op);
   for (i=0; i<gen_op.op_len; i++) begin
     case (op_type)
-      2'b00:
+      2'b00: begin
         test_intf.wr_en <= 0;
         test_intf.rd_en <= 0;
         test_intf.wr_data <= 0;
-      2'b01:
+      end
+      2'b01: begin
         test_intf.wr_en <= 0;
         test_intf.rd_en <= 1;
         test_intf.wr_data <= 0;      
-      2'b10:
+      end
+      2'b10: begin
         test_intf.wr_en <= 1;
         test_intf.rd_en <= 0;
-        test_intf.wr_data <= gen_op.wr_data[];  // ?????        
-      2'b11:
+        test_intf.wr_data <= gen_op.wr_data[];  // ?????
+      end
+      2'b11: begin
         test_intf.wr_en <= 1;
         test_intf.rd_en <= 1;
-        test_intf.wr_data <= gen_op.wr_data[];  // ?????        
+        test_intf.wr_data <= gen_op.wr_data[];  // ?????
+      end
     endcase
     @test_intf.cb;
   end
@@ -233,46 +238,119 @@ endtask : Driver
 //Monitor
 
 class Monitor;
-  vFifo_TB op_intf;
+  mailbox   mon2scb;
+  vFifo_TB  test_intf;
   
-  extern function new(input vFifo_TB op_intf);
+  extern function new(input vFifo_TB test_intf,
+                      input mailbox  mon2scb);
   extern task run();
-  extern task receive(output RData output_d);    //what should be received?
+  extern task receive(output fifo_op mon_op);
 endclass : Monitor
 
 //new
-function Monitor::new(input vFifo_TB op_intf);
-  this.op_intf = op_intf;
+function Monitor::new(input vFifo_TB test_intf,
+                      input mailbox mon2scb);
+  this.test_intf = test_intf;
+  this.mon2scb = mon2scb;
 endfunction
 
 
 task Monitor::run();
-  RData output_d;
+  fifo_op mon_op;
   
   forever begin
-    receive(output_d);
+    receive(mon_op);
+    @rcv_ok;                  //event
+    mon2scb.put(mon_op);
   end
   
 endtask : run
 
 
 //receive task
-task Monitor::receive(output RData output_d)
-
-.....
-
+task Monitor::receive(output fifo_op mon_op)
+  int index = 0;
+  while (test_intf.rd_en != 0) begin
+    mon_op.rd_data[index] = test_intf.rd_data;
+    index++;
+    @test_intf.cb;
+  end
+  ->rcv_ok;                   //event
 endtask : receive
 
 
 
 ///////////////////////////////////////////////////
+///////////////////////////////////////////////////
 //the scoreboard class
+class Scoreboard;
+  mailbox   drv2scb;
+  mailbox   mon2scb;
+  
+  bit [31:0] expt[$];   //used to save expect data
+  bit [31:0] actl[$];   //used to save actual data
+
+  extern function new(input mailbox drv2scb,
+                      input mailbox mon2scb);
+                      
+  extern task run();  
+  
+  extern task save_expect(input fifo_op gen_op);
+  
+  extern task save_actual(input fifo_op mon_op);
+  
+  extern task check();
+  
+endclass : Scoreboard
+
+
+function Scoreboard::new(input mailbox drv2scb,
+                         input mailbox mon2scb);
+  this.drv2scb = drv2scb;
+  this.mon2scb = mon2scb;
+endfunction : new
+
+//
+task Scoreboard::run();
+  fifo_op gen_op;
+  fifo_op mon_op;
+  
+  forever begin
+    fork
+      drv2scb.get(gen_op);
+      save_expect(gen_op);      
+      mon2scb.get(mon_op);
+      save_actual(mon_op);
+    join
+  end
+endclass : run
+
+
+//
+task Scoreboard::save_expect(input fifo_op gen_op);
+  while (gen_op.op_type[1] = 1) begin
+    expt[$] = gen_op.wr_data;
+    //@test_intf.cb
+  end
+endtask : save_expect
+
+
+//
+task Scoreboard::save_actual(input fifo_op mon_op);
+  while (mon_op.op_type[0] = 1) begin
+    actl[$] = mon_op.rd_data;
+    //@test_intf.cb
+  end
+endtask : save_actual
+
+
+//
+task Scoreboard::check();
+  ...
+endtask : check
 
 
 
-
-
-
-
+//////////////////////////////////////////////
 
 
