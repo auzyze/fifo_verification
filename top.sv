@@ -2,24 +2,23 @@
 
 module top;
 
-logic rst, clk;
-//System Reset and Clock
+bit clk;
+//System Clock
+
+//System Reset is not inclued in top, as it should be controllable~
 
 initial begin
-  rst = 1; clk = 0;
-  #5 rst = 0;
-  #5 clk = 1;
-  #5 rst = 1; clk = 0;
+  clk = 0;
   forever
     #5 clk = ~clk;
 end
 
 
-fifo_if my_if(clk,rst);       //instantiating interface and passing clock to it
+fifo_if my_if(clk);
 
-fifo_test my_test(clk,rst,my_if);
+fifo_test my_test(clk,my_if);   //argument is fifo_test can be "fifo_if.TB test_intf"
 
-sync_fifo DUT(clk,rst,my_if);
+sync_fifo DUT(clk,my_if);       //argument is sync_fifo can be "fifo_if.DUT dut_intf"
 
 
 enmodule
