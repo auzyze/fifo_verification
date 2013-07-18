@@ -320,14 +320,14 @@ endtask : receive
 ///////////////////////////////////////////////////
 //the scoreboard class
 class Scoreboard;
-  mailbox   drv2scb;
-  mailbox   mon2scb;
+  mailbox   drv2scb_m;
+  mailbox   mon2scb_m;
   
   bit [31:0] expt[$];   //used to save expect data
   bit [31:0] actl[$];   //used to save actual data
 
-  extern function new(input mailbox drv2scb,
-                      input mailbox mon2scb);
+  extern function new(input mailbox drv2scb_m,
+                      input mailbox mon2scb_m);
                       
   extern task run();  
   
@@ -340,10 +340,10 @@ class Scoreboard;
 endclass : Scoreboard
 
 
-function Scoreboard::new(input mailbox drv2scb,
-                         input mailbox mon2scb);
-  this.drv2scb = drv2scb;
-  this.mon2scb = mon2scb;
+function Scoreboard::new(input mailbox drv2scb_m,
+                         input mailbox mon2scb_m);
+  this.drv2scb_m = drv2scb_m;
+  this.mon2scb_m = mon2scb_m;
 endfunction : new
 
 //
@@ -353,9 +353,9 @@ task Scoreboard::run();
   
   forever begin
     fork
-      drv2scb.get(gen_op);
+      drv2scb_m.get(gen_op);
       save_expect(gen_op);      
-      mon2scb.get(mon_op);
+      mon2scb_m.get(mon_op);
       save_actual(mon_op);
     join
   end
@@ -366,17 +366,13 @@ endclass : run
 task Scoreboard::save_expect(input fifo_op gen_op);
   while (gen_op.op_type[1] = 1) begin
     expt[$] = gen_op.wr_data;
-    //@test_intf.cb
   end
 endtask : save_expect
 
 
 //
 task Scoreboard::save_actual(input fifo_op mon_op);
-  while (mon_op.op_type[0] = 1) begin
-    actl[$] = mon_op.rd_data;
-    //@test_intf.cb
-  end
+  actl[$] = mon_op.rd_data;
 endtask : save_actual
 
 
