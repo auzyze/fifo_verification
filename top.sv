@@ -17,9 +17,9 @@ end
 
 fifo_if my_if(clk,rst);       //instantiating interface and passing clock to it
 
-fifo_test my_test(my_if);
+fifo_test my_test(clk,rst,my_if);
 
-sync_fifo DUT(my_if);         //dut with be SV interface compatible
+sync_fifo DUT(clk,rst,my_if);
 
 
 enmodule
