@@ -1,21 +1,28 @@
 class Environment;
 
-  OP_generator  gen;
+  Generator     gen;
+  
   mailbox       gen2drv;
+  mailbox       drv2scb;
+  mailbox       mon2scb;
+  
   event         drv2gen;
+  
   Driver        drv;
   Monitor       mon;
-  Config        cfg;
   Scoreboard    scb;
   Coverage      cov;
   
-  CPU_driver    cpu;
+  Config        cfg;          //used to configure TB
+  
+  CPU_driver    cpu;          //driver used to configure DUT
 
-  vFifo_TB      op_intf;      //virtual interface
+  vFifo_TB      test_intf;    //virtual interface
   vCPU_T        cfg_intf;     //virtual interface
   
-  extern function new(input vFifo_TB op_intf,
-                      input vCPU_T cfg_intf);
+  extern function new(input vFifo_TB  test_intf,
+                      input vCPU_T    cfg_intf
+                      );
   
   extern virtual function void gen_cfg();
   extern virtual function void build();
@@ -26,23 +33,17 @@ endclass: Environment
 
 ///////////////////////////////////////////////////
 //construct an environment instance
-function Environment::new(input vFifo_TB op_intf,
-                          input vCPU_T cfg_intf);
-  this.op_intf = op_intf;
-  this.cfg_intf = cfg_intf;
-  
-  if ($test$plusargs("ntb_random_seed")) begin
-    int seed;
-    $value$plusargs("ntb_random_seed=%d",seed);
-    $display("Simulation run with random seed=%d",seed);
-  end
-  else
-    $display("Simulation run with default random seed");
+function Environment::new(input vFifo_TB  test_intf,
+                          input vCPU_T    cfg_intf
+                          );
+  this.test_intf = test_intf;
+  this.cfg_intf = cfg_intf;  
+  cfg = new();
 endfunction : new
-
+  
 
 ///////////////////////////////////////////////////
-//Randomize the configuration descriptor
+//configure ??
 function void Environment::gen_cfg();
   assert(cfg.randomize());
   cfg.display();
@@ -52,30 +53,20 @@ endfunction : gen_cfg
 //////////////////////////////////////////////////
 //Build the environment objects
 function void Environment::build();
-  cpu = new(cfg_intf,cfg);
+  cpu = new(cfg_intf,cfg);            //construct CPU driver with cfg info
   gen = new();
   drv = new();
-  gen2drv = new();
-  drv2gen = new();
-  scb = new(cfg);
+  
+  gen2drv = new();                    //mailbox X 3
+  drv2scb = new();
+  mon2scb = new();
+  
+  drv2gen = new();                    //event
+  
+  scb = new(cfg);                     //construct scoreboard with cfg info
   cov = new();
   mon = new();  
   
-  //??????
-  //Connect scoreboard to drvier & monitor with callbacks
-  begin
-    Scb_Driver_cbs sdc = new(scb);
-    Scb_Monitor_cbs smc = new(scb);
-    drv.cbsq.push_back(sdc);
-    mon.cbsq.push_back(smc);
-  end
-  
-  //connect coverage to monitor with callbacks
-  begin
-    Cov_Monitor_cbs cmc = new(cov);
-    mon.cbsq.push_back(cmc);
-  end
-
 endfunction : build
 
 
@@ -93,7 +84,8 @@ task Environment::run();
   //Monitor
   mon.run();
   
-  repeat (10000)@(op_intf.cb);
+  //wait for data to flow through DUT, monitor and scoreboard
+  repeat (10000)@(test_intf.cb);
   
 endtask : run
   
@@ -109,65 +101,59 @@ endfunction : wrap_up
 
 
 
-////////////////////////////////////////////////////////
-//fifo operation: write, read or both. suport single or burst
-//randomization: operation number, operation length, operation delay ...
-//
-class fifo_OP extends BaseOP;
-  rand bit [15:0] wr_num;
-  rand bit [15:0] wr_len;
-  rand bit [31:0] rd_data [];
-  rand bit        wr_dly [];
+////////////////////////////////////////////////
+//Define basic transaction : single write or read
+class fifo_op;
+  rand bit [1:0]  op_type;
+  rand bit [15:0] op_len;
   
-  rand bit [15:0] rd_num;
-  rand bit [15:0] rd_len;
-  rand bit        rd_dly [];
-  
-  
-  extern function new();
-  extern function void post_randomize();
-  extern vitrual function bit compare(input BaseOP to);
-  extern virtual function void display(input string prefix="");
-  extern virtual function void copy_data(input fifo_OP copy);
-  extern virtual function BaseOP copy(input BaseOP to=null);
-  
-...
+  rand bit [31:0] data [];
+    
+  bit [31:0] rd_data;
+  bit full;
+  bit empty;
+  bit afull;
+  bit aempty;
 
-endclass
+  //static bit [15:0] wr_count;
+  //static bit [15:0] rd_count;
+
+  //extern function new();
+  //extern function void post_randomize();
+    
+endclass : fifo_op
 
 
 
 ///////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////
-//FIFO OPeration Generator
-class OP_generator;
-  fifo_OP blueprint; //Blueprint for generator, can be replaced with objects derived from fifo_OP
+//FIFO Operation Generator
+class Generator;
+  fifo_op gen_op;
   mailbox gen2drv;
   event   drv2gen;
   
-  int n_Ops     //num of operations
+  int     op_num;
   
   function new(input mailbox gen2drv,
                input event drv2gen,
-               input int nOps);
+               input int op_num);
     this.gen2drv = gen2drv;
     this.drv2gen = drv2gen;
-    this.nOps = nOps;
-    blueprint = new();
+    this.op_num = op_num;
+    gen_op = new();
   endfunction : new
   
   task run();
-    fifo_OP operation;
-    repeat (nOps) begin
-      assert (blueprint.randomize());
-      $cast(operation, blueprint.copy());
-      gen2drv.put(operation);
+    repeat (op_num) begin
+      assert (gen_op.randomize());
+      gen2drv.put(gen_op);
       @drv2gen; //Wait for driver to finish with it
     end
   endtask : run
-
-endclass : OP_generator
+  
+endclass : Generator
 
 
 
@@ -176,55 +162,70 @@ endclass : OP_generator
 //Driver
 class Driver;
   mailbox gen2drv;
+  mailbox drv2scb;
   event   drv2gen;
-  vFifo_TB op_intf;     //virtual interface for operation transimitting
-  
-  Driver_cbs cbsq[$];     //Queue of callback objects
+  vFifo_TB test_intf;     //virtual interface for operation transimitting
   
   extern function new(input mailbox gen2drv,
+                      input mailbox drv2scb,
                       input event drv2gen,
-                      input vFifo_TB op_intf);
+                      input vFifo_TB test_intf);
   extern task run();
-  extern task send (input fifo_OP operation);
+  extern task send (input fifo_op gen_op);
   
 endclass : Driver
 
 //
 function Driver::new(input mailbox gen2drv,
                      input event drv2gen,
-                     input vFifo_TB op_intf);
+                     input vFifo_TB test_intf);
   this.gen2drv = gen2drv;
   this.drv2gen = drv2gen;
-  this.op_intf = op_intf;
+  this.test_intf = test_intf;
 endfunction : new
 
 //run() : run the driver
 task Driver::run();
-  fifo_OP operation;
+  fifo_op gen_op;
   
   //Initialize ports
-  op_intf.cb.wr_en <= 0;
-  op_intf.cb.wr_data <= 0;
-  op_intf.cb.rd_en <= 0;
+  test_intf.cb.wr_en <= 0;
+  test_intf.cb.wr_data <= 0;
+  test_intf.cb.rd_en <= 0;
   
   forever begin
-    gen2drv.peek(operation);      //"peek" task gets a copy of data in mailbox but doesn't remove it
-    send(operation);
-    gen2drv.get(operation);       //remove the data with "get" task after operation has been sent
+    gen2drv.peek(gen_op);      //"peek" task gets a copy of data in mailbox but doesn't remove it
+    send(gen_op);
+    gen2drv.get(gen_op);       //remove the data with "get" task after operation has been sent
     ->drv2gen;
   end
 endtask : run
 
 //send() : Send a operation into DUT
-task Driver::send(input fifo_OP operation);
-  
-  fork begin
-    //thread of writing
-    //thread of reading
+task Driver::send(input fifo_op gen_op);
+  for (i=0; i<gen_op.op_len; i++) begin
+    case (op_type)
+      2'b00:
+        test_intf.wr_en <= 0;
+        test_intf.rd_en <= 0;
+        test_intf.wr_data <= 0;
+      2'b01:
+        test_intf.wr_en <= 0;
+        test_intf.rd_en <= 1;
+        test_intf.wr_data <= 0;      
+      2'b10:
+        test_intf.wr_en <= 1;
+        test_intf.rd_en <= 0;
+        test_intf.wr_data <= gen_op.wr_data[];  // ?????        
+      2'b11:
+        test_intf.wr_en <= 1;
+        test_intf.rd_en <= 1;
+        test_intf.wr_data <= gen_op.wr_data[];  // ?????        
+    endcase
+    @test_intf.cb;
   end
   
-endtask
-
+endtask : Driver
 
 
 
