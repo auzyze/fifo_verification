@@ -102,12 +102,12 @@ endfunction : wrap_up
 
 
 ////////////////////////////////////////////////
-//Define basic transaction : single write or read
+//Define fifo transaction
 class fifo_op;
-  rand bit [1:0]  op_type;
-  rand bit [15:0] op_len;
+  rand bit [1:0]  op_type;      //op_type[1]=1 means write, [0]=1 mean read
+  rand bit [15:0] op_len;       //duration of write, or read, or both
   
-  rand bit [31:0] wr_data [];
+  rand bit [31:0] wr_data [];   //how to randomize a dynamic array??
     
   bit [31:0] rd_data;
   bit full;
