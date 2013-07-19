@@ -1,5 +1,4 @@
 
-
 class Environment;
 
   Generator     gen;
@@ -226,7 +225,6 @@ task Driver::run();
   forever begin
     gen2drv_m.peek(gen_op);      //"peek" task gets a copy of data in mailbox but doesn't remove it
     send(gen_op);
-    drv2scb_m.put(gen_op);       // ????
     gen2drv_m.get(gen_op);       //remove the data with "get" task after operation has been sent
     
     ->drv2gen_e;                 //tell generator to make next transaction
@@ -251,11 +249,13 @@ task Driver::send(input fifo_op gen_op);
         test_intf.wr_en <= 1;
         test_intf.rd_en <= 0;
         test_intf.wr_data <= gen_op.wr_data[i];  // ?????
+        drv2scb_m.put(gen_op.wr_data[i]);
       end
       2'b11: begin
         test_intf.wr_en <= 1;
         test_intf.rd_en <= 1;
         test_intf.wr_data <= gen_op.wr_data[i];  // ?????
+        drv2scb_m.put(gen_op.wr_data[i]);
       end
     endcase
     @test_intf.cb;
@@ -273,10 +273,10 @@ class Monitor;
   extern function new(input vFifo_TB test_intf,
                       input mailbox  mon2scb_m);
   extern task run();
-  extern task receive(output fifo_op mon_op);
+  extern task receive(input vFifo_TB test_intf);
 endclass : Monitor
 
-//new
+//new function
 function Monitor::new(input vFifo_TB test_intf,
                       input mailbox mon2scb_m);
   this.test_intf = test_intf;
@@ -285,22 +285,19 @@ endfunction
 
 
 task Monitor::run();
-  fifo_op mon_op;
-  
   forever begin
-    receive(mon_op);
-    mon2scb_m.put(mon_op);
+    receive(test_intf);
   end
 endtask : run
 
 
 //receive task
-task Monitor::receive(output fifo_op mon_op)
+task Monitor::receive(input vFifo_TB test_intf)
   while (test_intf.rd_en != 0) begin
     fork
       @test_intf.cb;
       @test_intf.cb;
-      mon_op.rd_data = test_intf.rd_data;
+      mon2scb_m.put(test_intf.rd_data);
     join
     @test_intf.cb;
   end
@@ -320,57 +317,56 @@ class Scoreboard;
 
   extern function new(input mailbox drv2scb_m,
                       input mailbox mon2scb_m);
-                      
   extern task run();  
-  
-  extern task save_expect(input fifo_op gen_op);
-  
-  extern task save_actual(input fifo_op mon_op);
-  
+  extern function save_expect(input mailbox drv2scb_m);
+  extern function save_actual(input mailbox mon2scb_m);
   extern task check();
   
 endclass : Scoreboard
 
-
+//new
 function Scoreboard::new(input mailbox drv2scb_m,
                          input mailbox mon2scb_m);
   this.drv2scb_m = drv2scb_m;
   this.mon2scb_m = mon2scb_m;
 endfunction : new
 
-//
+//run
 task Scoreboard::run();
-  fifo_op gen_op;
-  fifo_op mon_op;
-  
   forever begin
     fork
-      drv2scb_m.get(gen_op);
-      save_expect(gen_op);      
-      mon2scb_m.get(mon_op);
-      save_actual(mon_op);
+      save_expect(drv2scb_m);
+      save_actual(mon2scb_m);
+      check();
     join
   end
 endclass : run
 
-
-//
-task Scoreboard::save_expect(input fifo_op gen_op);
-  while (gen_op.op_type[1] = 1) begin
-    expt[$] = gen_op.wr_data;
-  end
+//save_expect
+function Scoreboard::save_expect(input mailbox drv2scb);
+  bit [31:0] wdata;
+  drv2scb.get(wdata);
+  expt.push_back(wdata);  
 endtask : save_expect
 
-
-//
-task Scoreboard::save_actual(input fifo_op mon_op);
-  actl[$] = mon_op.rd_data;
+//save_actual
+task Scoreboard::save_actual(input mailbox mon2scb);
+  bit [31:0] rdata;
+  mon2scb.get(rdata);
+  actl.push_back(rdata);  
 endtask : save_actual
 
-
-//
+//check
 task Scoreboard::check();
-  ...
+  //compare data in Queue expt[$] and actl[$];
+  if (expt[0] == actl[0]) begin
+    $display("check match");
+  end
+  else begin
+    $display("check mismatch: write=%d, read=%d",expt[0],actl[0]);
+  end  
+  expt.delete(0);
+  actl.delete(0);
 endtask : check
 
 
