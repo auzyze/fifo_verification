@@ -1,11 +1,3 @@
-//--- NOTES: -----
-
-//distinguish the object's type from handle's type!!!
-
-//SV uses object's type to design which virtual method to call, not handle'd type
-//if no "virtual" prefixed, SV uses handle's type to decide which method to call
-
-
 
 
 class Environment;
