@@ -56,7 +56,7 @@ function void Environment::build();
   cpu = new(cfg_intf,cfg);            //construct CPU driver with cfg info
   
   gen = new(gen2drv_m, drv2gen_e);
-  drv = new(gen2drv_m, drv2gen_e, drc2scb_m);
+  drv = new(gen2drv_m, drv2gen_e, drc2scb_m, test_intf);
   
   gen2drv_m = new();                  //mailbox X 3
   drv2scb_m = new();
@@ -66,7 +66,7 @@ function void Environment::build();
   
   scb = new(cfg);                     //construct scoreboard with cfg info
   cov = new();
-  mon = new(mon2scb_m);  
+  mon = new(mon2scb_m, test_intf);  
   
 endfunction : build
 
