@@ -1,4 +1,3 @@
-
 class Environment;
 
   Generator     gen;
@@ -109,7 +108,7 @@ class fifo_op;
   rand bit [1:0]  op_type;      //op_type[1]=1 means write, [0]=1 mean read
   rand bit [15:0] op_len;       //duration of write, or read, or both
   
-  rand bit [31:0] wr_data[];
+  rand bit [31:0] wr_data[];    //dynamic array
     constraint wr_c {wr_data.size == op_len;};
     
   bit [31:0] rd_data;
@@ -243,7 +242,7 @@ task Driver::send(input fifo_op gen_op);
       2'b01: begin
         test_intf.wr_en <= 0;
         test_intf.rd_en <= 1;
-        test_intf.wr_data <= 0;      
+        test_intf.wr_data <= 0;
       end
       2'b10: begin
         test_intf.wr_en <= 1;
@@ -287,22 +286,34 @@ endfunction
 task Monitor::run();
   forever begin
     receive(test_intf);
+    status(test_intf);
   end
 endtask : run
 
 
 //receive task
 task Monitor::receive(input vFifo_TB test_intf)
+  bit [31:0] rd_data;
   while (test_intf.rd_en != 0) begin
     fork
       @test_intf.cb;
       @test_intf.cb;
-      mon2scb_m.put(test_intf.rd_data);
+      rd_data = test_intf.rd_data;
+      mon2scb_m.put(rd_data);
     join
     @test_intf.cb;
   end
 endtask : receive
 
+//
+task Monitor::status(input vFifo_TB test_intf)
+  bit [3:0] sta;
+  sta = {test_intf.full,
+         test_intf.empty,
+         test_intf.afull,
+         test_intf.aempty};
+  mon2scb_m2.put(sta);        //any better way?
+endtask : receive
 
 
 ///////////////////////////////////////////////////
@@ -337,7 +348,8 @@ task Scoreboard::run();
     fork
       save_expect(drv2scb_m);
       save_actual(mon2scb_m);
-      check();
+      check_data();
+      check_status();
     join
   end
 endclass : run
@@ -356,8 +368,8 @@ task Scoreboard::save_actual(input mailbox mon2scb);
   actl.push_back(rdata);  
 endtask : save_actual
 
-//check
-task Scoreboard::check();
+//check_data
+task Scoreboard::check_data();
   //compare data in Queue expt[$] and actl[$];
   if (expt[0] == actl[0]) begin
     $display("check match");
@@ -367,7 +379,15 @@ task Scoreboard::check();
   end  
   expt.delete(0);
   actl.delete(0);
-endtask : check
+endtask : check_data
+
+//check_status
+task Scoreboard::check_status();
+  int s1 = expt.size;
+  int s2 = actl.size;
+  ...
+  
+endtask
 
 
 
